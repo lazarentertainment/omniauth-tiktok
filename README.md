@@ -3,16 +3,6 @@
 Supports OAuth 2.0 server-side flow with Tiktok API.
 Read the Tiktok docs for more details: https://developers.tiktok.com/doc/login-kit-web
 
-## Installing
-
-Add to your `Gemfile`:
-
-```ruby
-gem 'omniauth-tiktok'
-```
-
-Then `bundle install`.
-
 ## Usage
 
 `OmniAuth::Strategies::Tiktok` is simply a Rack middleware. Read the OmniAuth docs for detailed instructions: https://github.com/omniauth/omniauth.

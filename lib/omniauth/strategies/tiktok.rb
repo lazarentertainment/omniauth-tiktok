@@ -12,7 +12,7 @@ module OmniAuth
       end
 
       class NoAuthorizationCodeError < StandardError; end
-      DEFAULT_SCOPE = 'user.info.basic'
+      DEFAULT_SCOPE = 'user.info.basic,user.info.profile'
       USER_INFO_URL = 'https://open.tiktokapis.com/v2/user/info/'
 
       option :name, 'tiktok'
@@ -24,20 +24,32 @@ module OmniAuth
         token_url: 'https://open.tiktokapis.com/v2/oauth/token/',
         access_token_class: OmniAuth::Strategies::Tiktok::AccessToken
       }
-      option 'scope', 'user.info.basic'
 
-      option :authorize_options, %i[scope display auth_type]
-
-      uid { access_token.params.fetch('open_id') }
+      uid { raw_info.fetch('open_id') }
 
       info do
-        prune!('nickname' => raw_info['data']['display_name'])
+        hash = {
+          name: raw_info.fetch('display_name'),
+          image: raw_info.fetch('avatar_url_100')
+        }
+        if request.params.fetch('scopes').include?('user.info.profile')
+          hash.merge!(
+            nickname: raw_info.fetch('username'),
+            description: raw_info.fetch('bio_description'),
+            email: "#{raw_info.fetch('username')}@tiktok.stageten.tv",
+            urls: {
+              'TikTok' => raw_info.fetch('profile_web_link'),
+              'TikTok Deep Link' => raw_info.fetch('profile_deep_link')
+            }
+          )
+        end
+        hash
       end
 
       extra do
-        hash = {}
-        hash['raw_info'] = raw_info unless skip_info?
-        prune! hash
+        {
+          'raw_info' => raw_info
+        }
       end
 
       credentials do
@@ -52,9 +64,8 @@ module OmniAuth
       end
 
       def raw_info
-        @raw_info ||= access_token
-                      .get("#{USER_INFO_URL}?open_id=#{access_token.params['open_id']}&access_token=#{access_token.token}")
-                      .parsed || {}
+      ::Rails.logger.debug("raw_info")
+        @raw_info ||= user_info
       end
 
       def callback_url
@@ -71,18 +82,31 @@ module OmniAuth
 
       def token_params
         super.tap do |params|
-          params.delete(:client_id)
           params[:client_key] = options.client_key
+          params[:client_secret] = options.client_secret
         end
       end
 
       private
 
-      def prune!(hash)
-        hash.delete_if do |_, value|
-          prune!(value) if value.is_a?(Hash)
-          value.nil? || (value.respond_to?(:empty?) && value.empty?)
+      def user_info
+        @user_info = begin
+          fields = %w[open_id union_id avatar_url avatar_url_100 display_name]
+          scopes = request.params.fetch('scopes')
+          if scopes.include?('user.info.profile')
+            fields.push('profile_web_link', 'profile_deep_link', 'bio_description', 'is_verified', 'username')
+          end
+          response = access_token
+                     .get(
+                       USER_INFO_URL,
+                       params: {
+                         fields: fields.join(',')
+                       }
+                     )
+                     .parsed
+          response.fetch('data').fetch('user').to_hash
         end
+        @user_info
       end
     end
   end
